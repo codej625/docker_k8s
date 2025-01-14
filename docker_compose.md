@@ -94,7 +94,11 @@ services:
     ports:
       - 5432:5432 # 왼쪽은 실제 매핑되는 포트, 오른쪽은 현재의 포트
     volumes: # 안 적으면 기본 Docker의 저장 위치에 저장 된다.
-      - ./db:/var/lib/postgresql/data # Volume의 저장 위치 
+      - ./db:/var/lib/postgresql/data # Volume의 저장 위치
+    environment: # 안 적으면 기본 사용자는 posrgres
+      POSTGRES_USER: {user}
+      POSTGRES_PASSWORD: {password}
+      POSTGRES_DB: {db_name}
 ```
 
 ```
