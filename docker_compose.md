@@ -97,7 +97,7 @@ services:
       - ./db:/var/lib/postgresql/data # Volume의 저장 위치
     environment: # 안 적으면 기본 사용자는 posrgres
       POSTGRES_USER: {user}
-      POSTGRES_PASSWORD: {password}
+      POSTGRES_PASSWORD: {password} # 비밀번호는 스트링 값으로 입력
       POSTGRES_DB: {db_name}
 ```
 
