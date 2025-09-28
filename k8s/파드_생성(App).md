@@ -259,3 +259,66 @@ $ kubectl port-forward pod/spring-pod 1234:8080
 # 필요없는 파드를 전부 삭제하자
 $ kubectl delete pod spring-pod
 ```
+
+<br />
+<br />
+<br />
+
+14. 백엔드(Spring Boot) 서버 3개 띄워보기
+
+```
+기존에 작성해 두었던 매니페스트 파일을
+조금 수정하면 된다.
+```
+
+<br />
+
+`spring-pod.yaml`
+
+```yaml
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: spring-pod-1
+
+spec:
+  containers:
+    - name: spring-container
+      image: spring-server
+      ports:
+        - containerPort: 8080
+      imagePullPolicy: IfNotPresent
+
+---
+
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: spring-pod-2
+
+spec:
+  containers:
+    - name: spring-container
+      image: spring-server
+      ports:
+        - containerPort: 8081
+      imagePullPolicy: IfNotPresent
+
+---
+
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: spring-pod-3
+
+spec:
+  containers:
+    - name: spring-container
+      image: spring-server
+      ports:
+        - containerPort: 8082
+      imagePullPolicy: IfNotPresent
+```
