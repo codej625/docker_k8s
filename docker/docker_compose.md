@@ -106,22 +106,47 @@ docker-compose.yml 파일에 정의된 서비스를 실행한다.
 `docker-compose.yml`
 
 ```yaml
-version: '3.1'
+version: '3.8'
 
 services:
-  db:
-    image: postgres:15.10 # 이미지가 없으면 Docker Hub애서 자동으로 다운 받는다.
-    restart: no # 여러 가지 옵션이 있다. no는 기본값으로 컨테이너가 종료되면 재 시작하지 않는다.
+  # db
+  database-server:
+    container_name: postgres
+    image: postgres:15.8
+    restart: unless-stopped
     env_file:
-      - ./.env # 환경 변수가 있는 파일을 읽어온다.
+      - .env # 모든 환경 변수를 .env에서 로드
     ports:
-      - 5432:5432 # 왼쪽은 실제 매핑되는 포트, 오른쪽은 현재의 포트
-    volumes: # 안 적으면 기본 Docker의 저장 위치에 저장 된다.
-      - ./db:/var/lib/postgresql/data # Volume의 저장 위치
-    environment: # 안 적으면 기본 사용자는 posrgres
-      POSTGRES_USER: {user}
-      POSTGRES_PASSWORD: {password} # 비밀번호는 스트링 값으로 입력
-      POSTGRES_DB: {db_name}
+      - 5432:5432
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  # was
+  web-app-server:
+    container_name: nestjs
+    image: node:20-slim
+    working_dir: /usr/src/app
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - .:/usr/src/app
+    command: >
+      bash -c "npm install && npm run build && npm run start:prod"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 ```
 
 <br />
