@@ -1,0 +1,95 @@
+# Namespace
+
+<br />
+<br />
+
+* 왜 네임스페이스를 사용할까?
+
+---
+
+```
+Namespace는 Kubernetes 클러스터 내에서 리소스들을 논리적으로 분리하여,
+격리된 가상 클러스터처럼 사용할 수 있게 해주는 기능이다.
+```
+
+<br />
+<br />
+<br />
+<br />
+
+1. Namespace의 생성 및 적용 방법 설명
+
+```
+Namespace는 리소스들을 논리적으로 분리하는 경계 역할을 한다.
+
+따라서 사용자가 배포하는 대부분의 워크로드 리소스(Deployment, Pod, Service 등)는 이 경계 안에 위치해야 한다.
+
+Namespace 자체는 클러스터 범위 리소스이지만,
+워크로드 리소스를 담기 위해 먼저 생성해야 한다.
+```
+
+<br />
+
+`namespace.yaml`
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-project-prod
+```
+
+```zsh
+# kubectl apply 명령어로 실행
+kubectl apply -f namespace.yaml
+```
+
+<br />
+<br />
+<br />
+
+2. Namespace 적용 방법 (리소스 배포)
+
+```
+Pod, Deployment, Service 등 네임스페이스 범위(Namespace-scoped) 리소스를 생성할 때,
+Namespace를 지정하여 리소스를 해당 논리적 공간에 배치한다.
+```
+
+<br />
+
+`deployment.yaml`
+
+```yaml
+# 리소스 정의 파일의 metadata 섹션에 namespace 필드를 추가하여 명시
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextjs-frontend
+  # 네임스페이스 명시
+  namespace: my-project-dev 
+spec:
+  # ... (생략)
+```
+
+<br />
+<br />
+<br />
+
+3. Namespace를 적용하지 못하는 리소스 (Cluster-scoped Resources)
+
+```
+이러한 리소스들은 클러스터 전체에 영향을 미치고 관리되어야 하므로,
+특정 Namespace에 속하지 않는다.
+```
+
+<br />
+
+| 리소스 유형 | 설명 |
+| :--- | :--- |
+| **Node** (노드) | 애플리케이션이 실행되는 물리적/가상 머신 자체로, 클러스터의 근간이다. |
+| **PersistentVolume (PV)** | 실제 영구 저장소 볼륨 자체로, 클러스터 전체에서 공유 |
+| **Namespace** | 네임스페이스 자체를 네임스페이스에 담을 수 없다. (재귀적 문제) |
+| **ClusterRole / ClusterRoleBinding** | 클러스터 전체에 걸쳐 사용자 및 서비스 계정의 접근 권한을 정의 |
+| **CustomResourceDefinition (CRD)** | 쿠버네티스 API를 확장하기 위해 사용자 정의 리소스 타입을 클러스터에 등록하는 정의이다. |
+| **StorageClass** | 스토리지 프로비저닝 방식을 정의하는 설정으로, 클러스터 전체에서 사용 가능 |
