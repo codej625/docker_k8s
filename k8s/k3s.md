@@ -73,9 +73,9 @@ newgrp docker
 
 ```zsh
 # 설치 확인
-docker version                  # Docker Engine 버전 확인
-docker compose version         # Docker Compose 버전 확인 (v5.x)
-sudo docker run hello-world    # 테스트 컨테이너 실행
+docker version # Docker Engine 버전 확인
+docker compose version # Docker Compose 버전 확인 (v5.x)
+sudo docker run hello-world # 테스트 컨테이너 실행
 ```
 
 <br />
@@ -121,11 +121,21 @@ source ~/.zshrc
 # k3s 노드 확인
 kubectl get nodes
 
+# Longhorn은 볼륨을 연결할 때 iSCSI 사용하기 때문에, iSCSI 통신을 위한 패키지를 설치
+sudo apt update && sudo apt install open-iscsi -y
+
+# iSCSI 서비스 시작 및 활성화
+sudo systemctl enable --now iscsid
+
+# 서비스 상태 확인 (active (running) 인지 확인)
+sudo systemctl status iscsid
+
 # Longhorn 설치
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 
 # Longhorn 설치 확인
-kubectl get storageclass | grep longhorn # longhorn   (io.rancher.longhorn)
+kubectl get storageclass | grep longhorn # longhorn (io.rancher.longhorn)
+
 ```
 
 <br />
@@ -180,6 +190,23 @@ kubectl create secret generic postgres-secret \
 
 <br />
 
+`postgres-storageclass.yaml`
+
+```yaml
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+
+metadata:
+  name: longhorn
+
+provisioner: driver.longhorn.io
+parameters:
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "2880"
+```
+
+<br />
+
 `postgres-pvc.yaml`
 
 ```yaml
@@ -208,7 +235,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 
 metadata:
-  name: postgres-deployment
+  name: postgres-statefulset
   namespace: postgres-database # 네임스페이스
 
 spec:
