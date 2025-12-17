@@ -345,17 +345,32 @@ spec:
 
 7. 매니페스트 파일 적용
 
+<br />
+
+`PostgreSQL 데이터 저장할 디렉토리 생성 및 권한 설정`
+
 ```zsh
-# PostgreSQL 데이터 저장할 디렉토리 생성 및 권한 설정
+# 디렉토리 생성 (이미 있으면 무시됨)
 sudo mkdir -p /mnt/data
+
+# 소유자 변경 (PostgreSQL UID/GID 999로)
 sudo chown -R 999:999 /mnt/data
+
+# 권한을 PostgreSQL이 원하는 대로 700으로 설정
+sudo chmod 700 /mnt/data
 
 # 소유자가 999:999 이어야 함
 ls -ld /mnt/data
+
 # 내부 파일들도 마찬가지
 ls -l /mnt/data
+```
 
-# 네임스페이스 먼저 생성 (이미 있으면 무시)
+<br />
+
+`네임스페이스 먼저 생성 (이미 있으면 무시)`
+
+```
 kubectl create namespace postgres-database
 
 # 순서대로 적용
