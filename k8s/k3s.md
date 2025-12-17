@@ -118,8 +118,14 @@ export KUBECONFIG=~/.kube/config
 echo 'export KUBECONFIG=~/.kube/config' >> ~/.zshrc
 source ~/.zshrc
 
-# 확인
+# k3s 노드 확인
 kubectl get nodes
+
+# Longhorn 설치
+kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
+
+# Longhorn 설치 확인
+kubectl get storageclass | grep longhorn # longhorn   (io.rancher.longhorn)
 ```
 
 <br />
@@ -174,50 +180,6 @@ kubectl create secret generic postgres-secret \
 
 <br />
 
-`postgres-storageclass.yaml`
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: postgres-storage
-provisioner: rancher.io/local-path # K3s 기본 local-path 사용 (hostPath 호환)
-reclaimPolicy: Retain
-volumeBindingMode: Immediate
-allowVolumeExpansion: true # 나중에 스토리지 늘릴 때 편함
-```
-
-<br />
-
-`postgres-pv.yaml`
-
-```yaml
-# pvc 파일과 매칭 조건
-# storageClassName: postgres-storage
-# accessModes: ReadWriteOnce
-# storage: 5Gi
-
-apiVersion: v1
-kind: PersistentVolume
-
-metadata:
-  name: postgres-pv
-
-spec:
-  # 스토리지 클래스 이름
-  # pvc와 매칭
-  storageClassName: postgres-storage
-  capacity:
-    storage: 5Gi
-  accessModes:
-    # 한 번에 하나의 파드에서만 접근
-    - ReadWriteOnce
-  hostPath:
-    path: "/mnt/data"
-```
-
-<br />
-
 `postgres-pvc.yaml`
 
 ```yaml
@@ -229,13 +191,12 @@ metadata:
   namespace: postgres-database # 네임스페이스
 
 spec:
-  # pv와 매칭
-  storageClassName: postgres-storage
+  storageClassName: longhorn
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 20Gi
 ```
 
 <br />
@@ -273,8 +234,8 @@ spec:
               memory: "256Mi"
               cpu: "50m"
             limits: # 리소스 제한 (최대)
-              memory: "512Mi" # 메모리 제한 - 사용량은 사양에 따라 변경
-              cpu: "100m" # CPU 제한 - 사용량은 사양에 따라 변경
+              memory: "1408Mi" # 메모리 제한 - 사용량은 사양에 따라 변경
+              cpu: "1200m" # CPU 제한 - 사용량은 사양에 따라 변경
               # memory: "1408Mi" # 메모리 4GB 할당 기준
               # cpu: "1200m" # vCPU 2코어 할당 기준
           env:
@@ -364,38 +325,15 @@ spec:
 
 <br />
 
-`PostgreSQL 데이터 저장할 디렉토리 생성 및 권한 설정`
-
-```zsh
-# 디렉토리 생성 (이미 있으면 무시됨)
-sudo mkdir -p /mnt/data
-
-# 소유자 변경 (PostgreSQL UID/GID 999로)
-sudo chown -R 999:999 /mnt/data
-
-# 권한을 PostgreSQL이 원하는 대로 700으로 설정
-sudo chmod 700 /mnt/data
-
-# 소유자가 999:999 이어야 함
-ls -ld /mnt/data
-
-# 내부 파일들도 마찬가지
-ls -l /mnt/data
-```
-
-<br />
-
 `네임스페이스 먼저 생성 (이미 있으면 무시)`
 
 ```zsh
-kubectl create namespace postgres-database
+kubectl create namespace postgres-database --dry-run=client -o yaml | kubectl apply -f -
 
 # 순서대로 적용
 kubectl apply -f postgres-config.yaml
 kubectl apply -f postgres-secret.yaml
 
-kubectl apply -f postgres-storageclass.yaml
-kubectl apply -f postgres-pv.yaml
 kubectl apply -f postgres-pvc.yaml
 
 kubectl apply -f headless-service.yaml
@@ -418,4 +356,43 @@ kubectl top pod -n postgres-database
 
 # 노드 전체 자원 상황 확인
 kubectl top node
+```
+
+<br />
+<br />
+<br />
+
+8. 팁
+
+<br />
+
+`Longhorn 대시보드 보기`
+
+```zsh
+# longhorn-system 서비스 확인
+kubectl get svc -n longhorn-system
+
+# longhorn-frontend 서비스를 port-forward로 열기
+kubectl port-forward -n longhorn-system svc/longhorn-frontend 8080:80
+
+# 브라우저에서 http://localhost:8080 접속 (볼륨 상태, 백업 설정 등 관리 가능)
+```
+
+<br />
+
+`스토리지 늘리기`
+
+```zsh
+# storage: 20Gi -> 50Gi로 변경 (Longhorn이 자동 확장)
+kubectl edit pvc postgres-pvc -n postgres-database
+```
+
+<br />
+
+`디비 자동 스냅샷`
+
+```
+* 볼륨의 자동 스냅샷(snapshot)과 백업(backup)을 주기적으로 실행하도록 스케줄링하는 기능
+
+Longhorn UI에서 Volume -> Recurring Jobs 설정하기
 ```
