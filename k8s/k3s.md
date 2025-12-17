@@ -134,7 +134,7 @@ sudo systemctl enable --now iscsid
 # 서비스 상태 확인 (active (running) 인지 확인)
 sudo systemctl status iscsid
 
-# Longhorn 설치
+# Longhorn 설치 (Longhorn 설치 후 약 1~2분 대기 필수)
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 
 # Longhorn 설치 확인
