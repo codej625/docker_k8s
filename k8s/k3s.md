@@ -257,8 +257,10 @@ spec:
               memory: "256Mi"
               cpu: "50m"
             limits: # 리소스 제한 (최대)
-              memory: "512Mi" # 메모리 제한
-              cpu: "100m" # CPU 제한
+              memory: "512Mi" # 메모리 제한 - 사용량은 사양에 따라 변경
+              cpu: "100m" # CPU 제한 - 사용량은 사양에 따라 변경
+              # memory: "1408Mi" # 메모리 4GB 할당 기준
+              # cpu: "1200m" # vCPU 2코어 할당 기준
           env:
             # 환경 변수 설정
             ## 데이터베이스 설정
@@ -371,4 +373,14 @@ kubectl apply -f postgres-service.yaml
 ```zsh
 kubectl get all,configmap,secret,pvc -n postgres-database # database 네임스페이스에 다 있어야 함
 kubectl get pv # PV는 클러스터 전체
+```
+
+<br />
+
+```zsh
+# PostgreSQL 실제 사용량 확인
+kubectl top pod -n postgres-database
+
+# 노드 전체 자원 상황 확인
+kubectl top node
 ```
