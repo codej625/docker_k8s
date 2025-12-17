@@ -130,6 +130,21 @@ kubectl get nodes
 
 <br />
 
+`postgres-storageclass.yaml`
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: postgres-storage
+provisioner: rancher.io/local-path # K3s 기본 local-path 사용 (hostPath 호환)
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true # 나중에 스토리지 늘릴 때 편함
+```
+
+<br />
+
 `postgres-config.yaml`
 
 ```yaml
@@ -376,10 +391,13 @@ ls -l /mnt/data
 kubectl create namespace postgres-database
 
 # 순서대로 적용
-kubectl apply -f postgres-pv.yaml
 kubectl apply -f postgres-config.yaml
 kubectl apply -f postgres-secret.yaml
+
+kubectl apply -f postgres-storageclass.yaml
+kubectl apply -f postgres-pv.yaml
 kubectl apply -f postgres-pvc.yaml
+
 kubectl apply -f headless-service.yaml
 kubectl apply -f postgres-statefulset.yaml
 kubectl apply -f postgres-service.yaml
