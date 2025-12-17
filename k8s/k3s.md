@@ -130,21 +130,6 @@ kubectl get nodes
 
 <br />
 
-`postgres-storageclass.yaml`
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: postgres-storage
-provisioner: rancher.io/local-path # K3s 기본 local-path 사용 (hostPath 호환)
-reclaimPolicy: Retain
-volumeBindingMode: Immediate
-allowVolumeExpansion: true # 나중에 스토리지 늘릴 때 편함
-```
-
-<br />
-
 `postgres-config.yaml`
 
 ```yaml
@@ -185,6 +170,21 @@ kubectl create secret generic postgres-secret \
   --namespace=postgres-database \
   --from-literal=postgres-user=healthapp \
   --from-literal=postgres-password=#1234
+```
+
+<br />
+
+`postgres-storageclass.yaml`
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: postgres-storage
+provisioner: rancher.io/local-path # K3s 기본 local-path 사용 (hostPath 호환)
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true # 나중에 스토리지 늘릴 때 편함
 ```
 
 <br />
@@ -387,7 +387,7 @@ ls -l /mnt/data
 
 `네임스페이스 먼저 생성 (이미 있으면 무시)`
 
-```
+```zsh
 kubectl create namespace postgres-database
 
 # 순서대로 적용
