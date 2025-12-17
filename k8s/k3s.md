@@ -307,7 +307,8 @@ metadata:
 
 spec:
   clusterIP: None # Headless Service의 핵심
-  selector: app: postgres-db
+  selector:
+    app: postgres-db
   ports:
     - port: 5432
       targetPort: 5432
