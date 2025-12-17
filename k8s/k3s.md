@@ -26,14 +26,14 @@ k3s란 쿠버네티스(k8s)의 경량 버전이다.
 k3s의 권장 설치 사양은 CPU 2core, Memory 2GB 이다.
 
 백엔드 서버도 같이 실행시킬 것을 고려하면,
-AWS EC2 인스턴스는 t4g.small로 생성하면 좋다.
+AWS EC2 인스턴스는 t4g.medium로 생성하면 좋다.
 ```
 
 <br />
 <br />
 <br />
 
-2. Docker 설치
+2. Docker 설치 (선택)
 
 ```zsh
 # 기존 오래된 Docker 패키지 제거 (있을 경우)
@@ -76,6 +76,10 @@ newgrp docker
 docker version # Docker Engine 버전 확인
 docker compose version # Docker Compose 버전 확인 (v5.x)
 sudo docker run hello-world # 테스트 컨테이너 실행
+
+# kubectl 명령어 자동 완성 추가
+echo 'source <(kubectl completion zsh)' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 <br />
@@ -136,6 +140,16 @@ kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/depl
 # Longhorn 설치 확인
 kubectl get storageclass | grep longhorn # longhorn (io.rancher.longhorn)
 
+# K3s 필수 포트 허용
+sudo ufw allow 22/tcp
+sudo ufw allow 6443/tcp # Kubernetes API Server
+sudo ufw allow 10250/tcp # Kubelet Metrics
+sudo ufw allow 8472/udp # Flannel VXLAN (파드 간 네트워크 통신 - 필수)
+
+# PostgreSQL 외부 접속 허용 (ServiceLB 사용 시)
+sudo ufw allow 5432/tcp
+
+sudo ufw enable
 ```
 
 <br />
@@ -177,7 +191,7 @@ stringData:
   # 데이터베이스 사용자 이름
   postgres-user: "healthapp"
   # 데이터베이스 사용자 비밀번호
-  postgres-password: "#1234" # echo -n <비밀번호> | base64 이런 식으로 인코딩해서 넣는 것도 좋음
+  postgres-password: "#1234"
 ```
 
 ```zsh
@@ -201,7 +215,7 @@ metadata:
 
 provisioner: driver.longhorn.io
 parameters:
-  numberOfReplicas: "1"
+  numberOfReplicas: "1" # Longhorn은 3개의 복제본을 기본으로 하지만, 현재처럼 단일 노드(EC2 1대) 환경에서는 복제본을 1로 설정해야만 볼륨이 정상적으로 작동
   staleReplicaTimeout: "2880"
 ```
 
@@ -269,7 +283,7 @@ spec:
             # 환경 변수 설정
             ## 데이터베이스 설정
             ### 데이터베이스 이름
-            - name: POSTGRES_DATABASE
+            - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
                   name: postgres-config
@@ -331,7 +345,7 @@ metadata:
   namespace: postgres-database # 네임스페이스
 
 spec:
-  type: LoadBalancer
+  type: LoadBalancer # AWS EC2 인스턴스의 보안 그룹에서 인바운드 규칙으로 TCP 5432 포트가 열려 있지 않으면 외부(DBeaver나 백엔드 서버 등)에서 접속할 수 없음
   # type: NodePort # NodePort 설정 시, 외부 접속 사용 가능 (ClusterIP, NodePort, LoadBalancer)
   selector:
     app: postgres-db
@@ -422,4 +436,37 @@ kubectl edit pvc postgres-pvc -n postgres-database
 * 볼륨의 자동 스냅샷(snapshot)과 백업(backup)을 주기적으로 실행하도록 스케줄링하는 기능
 
 Longhorn UI에서 Volume -> Recurring Jobs 설정하기
+```
+
+<br />
+
+`ufw 방화벽 설정`
+
+```zsh
+# 상태 확인
+sudo ufw status verbose
+
+# 방화벽 활성화
+sudo ufw enable
+
+# 포트 및 서비스 허용/차단 규칙 (예시)
+sudo ufw allow 22/tcp # 22번 포트 허용
+
+sudo ufw allow 443/tcp # HTTPS 포트 허용
+
+sudo ufw allow 53/udp  # DNS (UDP) 포트 허용
+
+#특정 IP 주소에서 특정 포트 허용
+sudo ufw allow from 192.168.1.100 to any port 22
+
+# 기본 http 프로토콜(80, 443) 허용
+sudo ufw allow http
+sudo ufw allow https
+
+# Telnet 포트 차단
+sudo ufw deny 23/tcp
+
+# 또는 번호로 삭제 (sudo ufw status numbered로 번호 확인)
+sudo ufw delete 1
+sudo ufw delete allow 80/tcp
 ```
