@@ -34,19 +34,34 @@ k3s의 권장 설치 사양이 CPU 2 core, RAM 1 GB이다.
 
 2. Docker 설치
 
-```
-$ sudo apt-get update && \
-sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common && \
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add - && \
-sudo apt-key fingerprint 0EBFCD88 && \
-sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-sudo apt-get update && \
-sudo apt-get install -y docker-ce && \
-sudo usermod -aG docker ubuntu && \
-newgrp docker && \
-sudo curl -L "https://github.com/docker/compose/releases/download/2.27.1/docker-compose-$(uname -s)-$(unam
-sudo chmod +x /usr/local/bin/docker-compose && \
-sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+```zsh
+# 기존 오래된 Docker 패키지 제거 (있을 경우)
+sudo apt-get remove -y docker docker-engine docker.io containerd runc docker-compose docker-compose-v2 docker-doc podman-docker
+
+# 필요 패키지 설치
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+
+# Docker 공식 GPG 키와 리포지토리 추가
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# 리포지토리 추가 (Ubuntu 버전에 자동 맞춤)
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# 패키지 업데이트 후 Docker 설치 (Engine + Compose 플러그인 포함)
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# 현재 사용자(예: ubuntu)를 docker 그룹에 추가 (sudo 없이 사용 가능)
+sudo usermod -aG docker $USER
+
+# 새 그룹 적용 (로그아웃 없이 즉시 적용)
+newgrp docker
 ```
 
 <br />
@@ -55,9 +70,11 @@ sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
 
 3. 설치 확인
 
-```
-$ docker -v # Docker 버전 확인
-$ docker compose version # Docker Compose 버전 확인
+```zsh
+# 설치 확인
+docker version                  # Docker Engine 버전 확인
+docker compose version         # Docker Compose 버전 확인 (v5.x)
+sudo docker run hello-world    # 테스트 컨테이너 실행
 ```
 
 <br />
@@ -66,8 +83,292 @@ $ docker compose version # Docker Compose 버전 확인
 
 4. k3s 설치하기
 
-```
+```zsh
 $ curl -sfL https://get.k3s.io | sh - # k3s 설치
 $ sudo chmod 644 /etc/rancher/k3s/k3s.yaml # 권한 부여
 $ sudo kubectl version # k3s 잘 설치됐는 지 확인
+```
+
+<br />
+<br />
+<br />
+
+5. k3s 사용해서 간단한 데이터베이스 서버 만들기 (실습)
+
+```
+해당 예시에서는 ServiceLB를 사용해서 MetalLB를 대신하고
+간단한 데이터베이스 서버를 만들어볼 것이다.
+
+* ServiceLB란?
+ServiceLB는 K3s에 기본으로 내장된 간단한 LoadBalancer 구현체이다.
+```
+
+<br />
+
+```zsh
+# K3s 설치
+curl -sfL https://get.k3s.io | sh -
+
+# kubectl 설정 (zsh)
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
+export KUBECONFIG=~/.kube/config
+echo 'export KUBECONFIG=~/.kube/config' >> ~/.zshrc
+source ~/.zshrc
+
+# 확인
+kubectl get nodes
+```
+
+<br />
+<br />
+<br />
+
+6. 매니페스트 파일 만들기
+
+<br />
+
+`postgres-config.yaml`
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: postgres-config
+  namespace: postgres-database # 네임스페이스
+
+data:
+  # 데이터베이스 이름
+  postgres-database: healthapp
+```
+
+<br />
+
+`postgres-secret.yaml`
+
+```yaml
+apiVersion: v1
+kind: Secret
+
+metadata:
+  name: postgres-secret
+  namespace: postgres-database # 네임스페이스
+
+stringData:
+  # 데이터베이스 사용자 이름
+  postgres-user: "healthapp"
+  # 데이터베이스 사용자 비밀번호
+  postgres-password: "#1234" # echo -n <비밀번호> | base64 이런 식으로 인코딩해서 넣는 것도 좋음
+```
+
+```zsh
+# 실제 서버 운영 시 명령어로 바로 적용하고 매니페스트 파일 남기지 않는 방법도 있음
+kubectl create secret generic postgres-secret \
+  --namespace=postgres-database \
+  --from-literal=postgres-user=healthapp \
+  --from-literal=postgres-password=#1234
+```
+
+<br />
+
+`postgres-pv.yaml`
+
+```yaml
+# pvc 파일과 매칭 조건
+# storageClassName: postgres-storage
+# accessModes: ReadWriteOnce
+# storage: 5Gi
+
+apiVersion: v1
+kind: PersistentVolume
+
+metadata:
+  name: postgres-pv
+
+spec:
+  # 스토리지 클래스 이름
+  # pvc와 매칭
+  storageClassName: postgres-storage
+  capacity:
+    storage: 5Gi
+  accessModes:
+    # 한 번에 하나의 파드에서만 접근
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data"
+```
+
+<br />
+
+`postgres-pvc.yaml`
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+
+metadata:
+  name: postgres-pvc
+  namespace: postgres-database # 네임스페이스
+
+spec:
+  # pv와 매칭
+  storageClassName: postgres-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+<br />
+
+`postgres-statefulset.yaml`
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+  name: postgres-deployment
+  namespace: postgres-database # 네임스페이스
+
+spec:
+  serviceName: postgres-headless # headless service
+  replicas: 1 # 스케일 아웃 (배포 대수)
+  selector:
+    matchLabels:
+      app: postgres-db
+
+  template:
+    metadata:
+      labels:
+        app: postgres-db
+    spec:
+      containers:
+        - name: postgres-container # 컨테이너 이름
+          image: postgres:15 # 이미지 이름
+          imagePullPolicy: IfNotPresent # 이미지 풀 정책 (Always, Never, IfNotPresent)
+          ports:
+            - containerPort: 5432 # 컨테이너 포트 번호
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "50m"
+            limits: # 리소스 제한 (최대)
+              memory: "512Mi" # 메모리 제한
+              cpu: "100m" # CPU 제한
+          env:
+            # 환경 변수 설정
+            ## 데이터베이스 설정
+            ### 데이터베이스 이름
+            - name: POSTGRES_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: postgres-database
+            ### 데이터베이스 사용자 이름
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-user
+            ### 데이터베이스 사용자 비밀번호
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-password
+          # 볼륨 마운트
+          volumeMounts:
+            - name: postgres-persistent-storage # 볼륨 이름
+              mountPath: /var/lib/postgresql/data # 볼륨 마운트 경로 - PostgreSQL 권장 경로
+      # 볼륨 설정
+      volumes:
+        - name: postgres-persistent-storage # 볼륨 이름 (PV)
+          persistentVolumeClaim:
+            claimName: postgres-pvc # pvc 이름
+```
+
+<br />
+
+`headless-service.yaml`
+
+```yaml
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: postgres-headless
+  namespace: postgres-database # 네임스페이스
+
+spec:
+  clusterIP: None # Headless Service의 핵심
+  selector: app: postgres-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+```
+
+<br />
+
+`postgres-service.yaml`
+
+```yaml
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: postgres-service
+  namespace: postgres-database # 네임스페이스
+
+spec:
+  type: LoadBalancer
+  # type: NodePort # NodePort 설정 시, 외부 접속 사용 가능 (ClusterIP, NodePort, LoadBalancer)
+  selector:
+    app: postgres-db
+  ports:
+    - protocol: TCP
+      targetPort: 5432
+      port: 5432
+      name: postgres
+      # nodePort: 30000 # NodePort 설정 시 사용 nodePort를 명시하지 않으면, 랜덤으로 지정 (30000~)
+# type가 ClusterIP 일 때 외부 접속 필요 시, kubectl port-forward pod/[pod-name] [local-port]:[container-port] 명령어 사용
+```
+
+<br />
+<br />
+<br />
+
+7. 매니페스트 파일 적용
+
+```zsh
+# PostgreSQL 데이터 저장할 디렉토리 생성 및 권한 설정
+sudo mkdir -p /mnt/data
+sudo chown -R 999:999 /mnt/data
+
+# 소유자가 999:999 이어야 함
+ls -ld /mnt/data
+# 내부 파일들도 마찬가지
+ls -l /mnt/data
+
+# 네임스페이스 먼저 생성 (이미 있으면 무시)
+kubectl create namespace postgres-database
+
+# 순서대로 적용
+kubectl apply -f postgres-pv.yaml
+kubectl apply -f postgres-config.yaml
+kubectl apply -f postgres-secret.yaml
+kubectl apply -f postgres-pvc.yaml
+kubectl apply -f headless-service.yaml
+kubectl apply -f postgres-statefulset.yaml
+kubectl apply -f postgres-service.yaml
+```
+
+<br />
+
+```zsh
+kubectl get all,configmap,secret,pvc -n postgres-database # database 네임스페이스에 다 있어야 함
+kubectl get pv # PV는 클러스터 전체
 ```
