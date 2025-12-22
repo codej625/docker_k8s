@@ -69,7 +69,7 @@ newgrp docker
 <br />
 <br />
 
-3. 설치 확인
+3. 도커 설치 확인 및 kubectl 자동 완성 기능 추가
 
 ```zsh
 # 설치 확인
