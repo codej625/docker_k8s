@@ -76,10 +76,6 @@ newgrp docker
 docker version # Docker Engine 버전 확인
 docker compose version # Docker Compose 버전 확인 (v5.x)
 sudo docker run hello-world # 테스트 컨테이너 실행
-
-# kubectl 명령어 자동 완성 추가
-echo 'source <(kubectl completion zsh)' >> ~/.zshrc
-source ~/.zshrc
 ```
 
 <br />
@@ -89,9 +85,24 @@ source ~/.zshrc
 4. k3s 설치하기
 
 ```zsh
-$ curl -sfL https://get.k3s.io | sh - # k3s 설치
-$ sudo chmod 644 /etc/rancher/k3s/k3s.yaml # 권한 부여
-$ sudo kubectl version # k3s 잘 설치됐는 지 확인
+curl -sfL https://get.k3s.io | sh - # k3s 설치
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml # 권한 부여
+sudo kubectl version # k3s 잘 설치됐는 지 확인
+
+# kubectl 명령어 자동 완성 추가
+echo 'source <(kubectl completion zsh)' >> ~/.zshrc
+source ~/.zshrc
+
+# kubectl 설정 (zsh)
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
+export KUBECONFIG=~/.kube/config
+echo 'export KUBECONFIG=~/.kube/config' >> ~/.zshrc
+source ~/.zshrc
+
+# k3s 노드 확인
+kubectl get nodes
 ```
 
 <br />
@@ -111,20 +122,6 @@ ServiceLB는 K3s에 기본으로 내장된 간단한 LoadBalancer 구현체이�
 <br />
 
 ```zsh
-# K3s 설치
-curl -sfL https://get.k3s.io | sh -
-
-# kubectl 설정 (zsh)
-mkdir -p ~/.kube
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $USER:$USER ~/.kube/config
-export KUBECONFIG=~/.kube/config
-echo 'export KUBECONFIG=~/.kube/config' >> ~/.zshrc
-source ~/.zshrc
-
-# k3s 노드 확인
-kubectl get nodes
-
 # Longhorn은 볼륨을 연결할 때 iSCSI 사용하기 때문에, iSCSI 통신을 위한 패키지를 설치
 sudo apt update && sudo apt install open-iscsi -y
 
@@ -139,6 +136,28 @@ kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/depl
 
 # Longhorn 설치 확인
 kubectl get storageclass | grep longhorn # longhorn (io.rancher.longhorn)
+
+# Longhorn 필수 패키지 추가 설치
+sudo apt install -y nfs-common
+
+# multipathd 비활성화 (Longhorn과 충돌 방지)
+sudo systemctl stop multipathd
+sudo systemctl disable multipathd
+
+# dm_crypt 커널 모듈 로드
+sudo modprobe dm_crypt
+echo "dm_crypt" | sudo tee -a /etc/modules
+
+# Metrics Server 설치 (리소스 모니터링용 - 선택)
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Metrics Server와 Kubelet 간의 TLS 인증서 검증을 건너뛰어 리소스 데이터 수집 에러를 해결함
+kubectl patch deployment metrics-server -n kube-system --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+
+# Longhorn Storage Reserved 조정 (디스크 용량이 부족한 경우)
+kubectl patch nodes.longhorn.io <node-name> -n longhorn-system --type='json' \
+  -p='[{"op": "replace", "path": "/spec/disks/default-disk-xxxxxxxx/storageReserved", "value": 3221225472}]'
 
 # K3s 필수 포트 허용
 sudo ufw allow 22/tcp
@@ -212,11 +231,17 @@ apiVersion: storage.k8s.io/v1
 
 metadata:
   name: longhorn
+  # name: longhorn-single
 
 provisioner: driver.longhorn.io
+allowVolumeExpansion: true # PVC 용량 확장 허용
 parameters:
+  # 단일 노드 환경에서는 1로 설정 필수
   numberOfReplicas: "1" # Longhorn은 3개의 복제본을 기본으로 하지만, 현재처럼 단일 노드(EC2 1대) 환경에서는 복제본을 1로 설정해야만 볼륨이 정상적으로 작동
   staleReplicaTimeout: "2880"
+
+# Longhorn 설치 시 기본 StorageClass가 자동 생성되므로,
+# 단일 노드 환경에서는 이 파일을 사용하여 replica를 1로 고정한 별도의 StorageClass를 생성
 ```
 
 <br />
@@ -233,6 +258,7 @@ metadata:
 
 spec:
   storageClassName: longhorn
+  # storageClassName: longhorn-single
   accessModes:
     - ReadWriteOnce
   resources:
@@ -300,10 +326,14 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: postgres-password
+            ### 서브디렉토리 사용
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           # 볼륨 마운트
           volumeMounts:
             - name: postgres-persistent-storage # 볼륨 이름
               mountPath: /var/lib/postgresql/data # 볼륨 마운트 경로 - PostgreSQL 권장 경로
+
       # 볼륨 설정
       volumes:
         - name: postgres-persistent-storage # 볼륨 이름 (PV)
@@ -375,6 +405,7 @@ kubectl create namespace postgres-database --dry-run=client -o yaml | kubectl ap
 kubectl apply -f postgres-config.yaml
 kubectl apply -f postgres-secret.yaml
 
+kubectl apply -f postgres-storageclass.yaml
 kubectl apply -f postgres-pvc.yaml
 
 kubectl apply -f headless-service.yaml
@@ -469,4 +500,68 @@ sudo ufw deny 23/tcp
 # 또는 번호로 삭제 (sudo ufw status numbered로 번호 확인)
 sudo ufw delete 1
 sudo ufw delete allow 80/tcp
+```
+
+<br />
+
+`트러블슈팅`
+
+```zsh
+# Pod가 ContainerCreating 상태에서 멈춘 경우
+kubectl describe pod <pod-name> -n <namespace>  # Events 섹션 확인
+
+# 볼륨 생성 실패 시 (insufficient storage)
+kubectl get nodes.longhorn.io <node-name> -n longhorn-system -o yaml
+# storageReserved 값을 줄이거나 PVC 용량을 줄여서 해결
+
+# Pod가 Error 상태인 경우
+kubectl logs <pod-name> -n <namespace>  # 로그 확인
+kubectl logs <pod-name> -n <namespace> --previous  # 이전 컨테이너 로그
+
+# PostgreSQL "directory exists but is not empty" 에러
+# -> PGDATA 환경 변수를 /var/lib/postgresql/data/pgdata로 설정
+
+# Longhorn 볼륨이 faulted 상태인 경우
+kubectl delete volumes.longhorn.io --all -n longhorn-system  # 볼륨 초기화
+```
+
+<br />
+
+`디스크 용량 부족 (insufficient storage)`
+
+```zsh
+# 디스크 용량 확인
+df -h
+
+# Longhorn Storage Reserved 줄이기
+kubectl patch nodes.longhorn.io <node-name> -n longhorn-system --type='json' \
+  -p='[{"op": "replace", "path": "/spec/disks/<disk-id>/storageReserved", "value": 3221225472}]'
+
+# 또는 PVC 용량 줄이기 (20Gi → 10Gi)
+```
+
+<br />
+
+`PostgreSQL 초기화 실패`
+
+```zsh
+# "directory exists but is not empty" 에러 해결
+# StatefulSet에 PGDATA 환경 변수 추가 필요
+- name: PGDATA
+  value: /var/lib/postgresql/data/pgdata
+```
+
+<br />
+
+`Longhorn Pod 재시작 반복`
+
+```zsh
+# 필수 패키지 설치
+sudo apt install -y nfs-common open-iscsi
+
+# multipathd 비활성화
+sudo systemctl stop multipathd && sudo systemctl disable multipathd
+
+# 커널 모듈 로드
+sudo modprobe dm_crypt
 ```
