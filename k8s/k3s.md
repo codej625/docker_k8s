@@ -33,56 +33,7 @@ AWS EC2 인스턴스는 t4g.medium로 생성하면 좋다.
 <br />
 <br />
 
-2. Docker 설치 (선택)
-
-```zsh
-# 기존 오래된 Docker 패키지 제거 (있을 경우)
-sudo apt-get remove -y docker docker-engine docker.io containerd runc docker-compose docker-compose-v2 docker-doc podman-docker
-
-# 필요 패키지 설치
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl
-
-# Docker 공식 GPG 키와 리포지토리 추가
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-# 리포지토리 추가 (Ubuntu 버전에 자동 맞춤)
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# 패키지 업데이트 후 Docker 설치 (Engine + Compose 플러그인 포함)
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# 현재 사용자(예: ubuntu)를 docker 그룹에 추가 (sudo 없이 사용 가능)
-sudo usermod -aG docker $USER
-
-# 새 그룹 적용 (로그아웃 없이 즉시 적용)
-newgrp docker
-```
-
-<br />
-<br />
-<br />
-
-3. 도커 설치 확인 및 kubectl 자동 완성 기능 추가
-
-```zsh
-# 설치 확인
-docker version # Docker Engine 버전 확인
-docker compose version # Docker Compose 버전 확인 (v5.x)
-sudo docker run hello-world # 테스트 컨테이너 실행
-```
-
-<br />
-<br />
-<br />
-
-4. k3s 설치하기
+2. k3s 설치하기
 
 ```zsh
 curl -sfL https://get.k3s.io | sh - # k3s 설치
@@ -109,7 +60,7 @@ kubectl get nodes
 <br />
 <br />
 
-5. k3s 사용해서 간단한 데이터베이스 서버 만들기 (실습)
+3. k3s 사용해서 간단한 데이터베이스 서버 만들기 (실습)
 
 ```
 해당 예시에서는 ServiceLB를 사용해서 MetalLB를 대신하고
@@ -122,8 +73,8 @@ ServiceLB는 K3s에 기본으로 내장된 간단한 LoadBalancer 구현체이�
 <br />
 
 ```zsh
-# Longhorn은 볼륨을 연결할 때 iSCSI 사용하기 때문에, iSCSI 통신을 위한 패키지를 설치
-sudo apt update && sudo apt install open-iscsi -y
+# Longhorn 필수 패키지 한 번에 설치 (iSCSI, NFS)
+sudo apt update && sudo apt install -y open-iscsi nfs-common
 
 # iSCSI 서비스 시작 및 활성화
 sudo systemctl enable --now iscsid
@@ -136,9 +87,6 @@ kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/depl
 
 # Longhorn 설치 확인
 kubectl get storageclass | grep longhorn # longhorn (io.rancher.longhorn)
-
-# Longhorn 필수 패키지 추가 설치
-sudo apt install -y nfs-common
 
 # multipathd 비활성화 (Longhorn과 충돌 방지)
 sudo systemctl stop multipathd
@@ -156,8 +104,21 @@ kubectl patch deployment metrics-server -n kube-system --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 
 # Longhorn Storage Reserved 조정 (디스크 용량이 부족한 경우)
+# 먼저 노드 이름과 디스크 ID 확인
+kubectl get nodes.longhorn.io -n longhorn-system  # 노드 이름 확인
+kubectl get nodes.longhorn.io <조회한-노드-이름> -n longhorn-system -o yaml  # 디스크 ID 확인
+
+# 확인한 정보로 storageReserved 조정 (3GB로 설정)
 kubectl patch nodes.longhorn.io <node-name> -n longhorn-system --type='json' \
-  -p='[{"op": "replace", "path": "/spec/disks/default-disk-xxxxxxxx/storageReserved", "value": 3221225472}]'
+  -p='[{"op": "replace", "path": "/spec/disks/<disk-id>/storageReserved", "value": 3221225472}]'
+```
+
+<br />
+
+```zsh
+# AWS EC2 보안 그룹 설정 (AWS 콘솔에서 먼저 진행)
+# 인바운드 규칙에 TCP 5432 포트 추가 필수 (외부 접속용)
+# 접속할 IP 또는 0.0.0.0/0 (전체 허용 시)
 
 # K3s 필수 포트 허용
 sudo ufw allow 22/tcp
@@ -168,6 +129,7 @@ sudo ufw allow 8472/udp # Flannel VXLAN (파드 간 네트워크 통신 - 필수
 # PostgreSQL 외부 접속 허용 (ServiceLB 사용 시)
 sudo ufw allow 5432/tcp
 
+# 방화벽 활성화
 sudo ufw enable
 ```
 
@@ -175,7 +137,7 @@ sudo ufw enable
 <br />
 <br />
 
-6. 매니페스트 파일 만들기
+4. 매니페스트 파일 만들기
 
 <br />
 
@@ -392,7 +354,7 @@ spec:
 <br />
 <br />
 
-7. 매니페스트 파일 적용
+5. 매니페스트 파일 적용
 
 <br />
 
@@ -434,7 +396,7 @@ kubectl top node
 <br />
 <br />
 
-8. 팁
+6. 팁
 
 <br />
 
@@ -527,21 +489,6 @@ kubectl delete volumes.longhorn.io --all -n longhorn-system  # 볼륨 초기화
 
 <br />
 
-`디스크 용량 부족 (insufficient storage)`
-
-```zsh
-# 디스크 용량 확인
-df -h
-
-# Longhorn Storage Reserved 줄이기
-kubectl patch nodes.longhorn.io <node-name> -n longhorn-system --type='json' \
-  -p='[{"op": "replace", "path": "/spec/disks/<disk-id>/storageReserved", "value": 3221225472}]'
-
-# 또는 PVC 용량 줄이기 (20Gi → 10Gi)
-```
-
-<br />
-
 `PostgreSQL 초기화 실패`
 
 ```zsh
@@ -549,19 +496,4 @@ kubectl patch nodes.longhorn.io <node-name> -n longhorn-system --type='json' \
 # StatefulSet에 PGDATA 환경 변수 추가 필요
 - name: PGDATA
   value: /var/lib/postgresql/data/pgdata
-```
-
-<br />
-
-`Longhorn Pod 재시작 반복`
-
-```zsh
-# 필수 패키지 설치
-sudo apt install -y nfs-common open-iscsi
-
-# multipathd 비활성화
-sudo systemctl stop multipathd && sudo systemctl disable multipathd
-
-# 커널 모듈 로드
-sudo modprobe dm_crypt
 ```
