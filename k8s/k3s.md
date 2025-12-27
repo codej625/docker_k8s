@@ -110,6 +110,9 @@ lsmod | grep dm_crypt
 kubectl patch storageclass local-path \
   -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
 
+# 시스템 재부팅 (권장)
+sudo reboot
+
 # Longhorn 설치 확인
 kubectl get storageclass
 ```
