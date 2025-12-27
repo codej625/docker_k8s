@@ -192,8 +192,8 @@ kind: StorageClass
 apiVersion: storage.k8s.io/v1
 
 metadata:
-  name: longhorn
-  # name: longhorn-single
+  # name: longhorn # longhorn이라는 이름은 위에서 설치하면서 이미 사용
+  name: longhorn-single
 
 provisioner: driver.longhorn.io
 allowVolumeExpansion: true # PVC 용량 확장 허용
@@ -219,8 +219,8 @@ metadata:
   namespace: postgres-database # 네임스페이스
 
 spec:
-  storageClassName: longhorn
-  # storageClassName: longhorn-single
+  # storageClassName: longhorn
+  storageClassName: longhorn-single
   accessModes:
     - ReadWriteOnce
   resources:
