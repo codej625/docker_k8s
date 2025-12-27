@@ -82,37 +82,56 @@ sudo systemctl enable --now iscsid
 # 서비스 상태 확인 (active (running) 인지 확인)
 sudo systemctl status iscsid
 
-# Longhorn 설치 (Longhorn 설치 후 약 1~2분 대기 필수)
+# Longhorn 설치
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 
-# local-path default 해제
-kubectl patch storageclass local-path \
-  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
-
-# Longhorn 설치 확인
-kubectl get storageclass
+# Longhorn이 완전히 설치될 때까지 대기 (약 1~2분)
+echo "Longhorn 설치 중... 약 2분 소요됩니다."
+kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=300s
 
 # multipathd 비활성화 (Longhorn과 충돌 방지)
 sudo systemctl stop multipathd
 sudo systemctl disable multipathd
 
+# multipathd.socket 비활성화 (재시작 방지)
+sudo systemctl stop multipathd.socket
+sudo systemctl disable multipathd.socket
+sudo systemctl mask multipathd.socket
+
 # dm_crypt 커널 모듈 로드
 sudo modprobe dm_crypt
 echo "dm_crypt" | sudo tee -a /etc/modules
 
+# 설정 확인
+sudo systemctl status multipathd.socket
+lsmod | grep dm_crypt
+
+# local-path default 해제 (Longhorn을 기본으로 사용)
+kubectl patch storageclass local-path \
+  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+
+# Longhorn 설치 확인
+kubectl get storageclass
+```
+
+```zsh
 # Metrics Server 설치 (리소스 모니터링용 - 선택)
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
 # Metrics Server와 Kubelet 간의 TLS 인증서 검증을 건너뛰어 리소스 데이터 수집 에러를 해결함
 kubectl patch deployment metrics-server -n kube-system --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+```
 
+```zsh
 # Longhorn Storage Reserved 조정 (디스크 용량이 부족한 경우)
 # 먼저 노드 이름과 디스크 ID 확인
 kubectl get nodes.longhorn.io -n longhorn-system  # 노드 이름 확인
-kubectl get nodes.longhorn.io <조회한-노드-이름> -n longhorn-system -o yaml  # 디스크 ID 확인
+kubectl get nodes.longhorn.io <조회한-노드-이름> -n longhorn-system -o yaml | grep -B 2 "storageReserved"  # 디스크 ID 확인
 
-# 확인한 정보로 storageReserved 조정 (3GB로 설정)
+# 확인한 정보로 storageReserved 조정
+# 3GB = 3221225472 바이트
+# 5GB = 5368709120 바이트
 kubectl patch nodes.longhorn.io <node-name> -n longhorn-system --type='json' \
   -p='[{"op": "replace", "path": "/spec/disks/<disk-id>/storageReserved", "value": 3221225472}]'
 ```
