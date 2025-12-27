@@ -81,63 +81,17 @@ sudo systemctl enable --now iscsid
 
 # 서비스 상태 확인 (active (running) 인지 확인)
 sudo systemctl status iscsid
-```
 
-```zsh
-# Longhorn 설치 및 단일 노드 환경 설정
+# Longhorn 설치 (Longhorn 설치 후 약 1~2분 대기 필수)
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 
-# Longhorn이 완전히 설치될 때까지 대기 (약 1~2분)
-kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=300s
-
-# 기존 longhorn StorageClass 삭제
-kubectl delete storageclass longhorn
-```
-
-<br />
-
-`postgres-storageclass.yaml`
-
-```yaml
-kind: StorageClass
-apiVersion: storage.k8s.io/v1
-
-metadata:
-  name: longhorn
-  annotations:
-    # 기본 StorageClass로 설정
-    storageclass.kubernetes.io/is-default-class: "true"
-
-provisioner: driver.longhorn.io
-allowVolumeExpansion: true # PVC 용량 확장 허용
-reclaimPolicy: Delete # PVC 삭제 시 PV도 함께 삭제
-volumeBindingMode: Immediate # PVC 생성 즉시 볼륨 바인딩
-
-parameters:
-  # 단일 노드 환경에서는 1로 설정 필수
-  # Longhorn은 3개의 복제본을 기본으로 하지만,
-  # 단일 노드(EC2 1대) 환경에서는 복제본을 1로 설정해야 볼륨이 정상 작동
-  numberOfReplicas: "1"
-  
-  # 오래된 복제본 타임아웃 (분 단위)
-  staleReplicaTimeout: "2880"
-```
-
-<br />
-
-```zsh
-# 단일 노드용 longhorn StorageClass 재생성
-kubectl apply -f postgres-storageclass.yaml
-
-# k3s 기본 local-path StorageClass의 default 설정 해제 (Longhorn을 기본으로 사용)
+# local-path default 해제
 kubectl patch storageclass local-path \
   -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
 
-# 설치 확인
+# Longhorn 설치 확인
 kubectl get storageclass
-```
 
-```zsh
 # multipathd 비활성화 (Longhorn과 충돌 방지)
 sudo systemctl stop multipathd
 sudo systemctl disable multipathd
@@ -235,6 +189,35 @@ kubectl create secret generic postgres-secret \
 
 <br />
 
+`postgres-storageclass.yaml`
+
+```yaml
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+
+metadata:
+  name: longhorn-single
+  annotations:
+    # 기본 StorageClass로 설정
+    storageclass.kubernetes.io/is-default-class: "true"
+
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true # PVC 용량 확장 허용
+reclaimPolicy: Delete # PVC 삭제 시 PV도 함께 삭제
+volumeBindingMode: Immediate # PVC 생성 즉시 볼륨 바인딩
+
+parameters:
+  # 단일 노드 환경에서는 1로 설정 필수
+  # Longhorn은 3개의 복제본을 기본으로 하지만,
+  # 단일 노드(EC2 1대) 환경에서는 복제본을 1로 설정해야 볼륨이 정상 작동
+  numberOfReplicas: "1"
+  
+  # 오래된 복제본 타임아웃 (분 단위)
+  staleReplicaTimeout: "2880"
+```
+
+<br />
+
 `postgres-pvc.yaml`
 
 ```yaml
@@ -246,12 +229,12 @@ metadata:
   namespace: postgres-database # 네임스페이스
 
 spec:
-  storageClassName: longhorn
+  # storageClassName: longhorn-single
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi
+      storage: 30Gi
 ```
 
 <br />
@@ -393,6 +376,7 @@ kubectl create namespace postgres-database --dry-run=client -o yaml | kubectl ap
 kubectl apply -f postgres-config.yaml
 kubectl apply -f postgres-secret.yaml
 
+kubectl apply -f postgres-storageclass.yaml
 kubectl apply -f postgres-pvc.yaml
 
 kubectl apply -f headless-service.yaml
