@@ -82,11 +82,19 @@ sudo systemctl enable --now iscsid
 # 서비스 상태 확인 (active (running) 인지 확인)
 sudo systemctl status iscsid
 
-# Longhorn 설치 (Longhorn 설치 후 약 1~2분 대기 필수)
+# Longhorn 설치 및 단일 노드 환경 설정
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 
-# Longhorn 설치 확인
-kubectl get storageclass | grep longhorn # longhorn (io.rancher.longhorn)
+# Longhorn이 완전히 설치될 때까지 대기 (약 1~2분)
+kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=300s
+
+# 단일 노드 환경에 맞게 기본 StorageClass의 replica 수정
+kubectl patch storageclass longhorn -p '{"parameters":{"numberOfReplicas":"1"}}'
+
+# 설치 확인
+kubectl get storageclass
+# NAME       PROVISIONER             RECLAIMPOLICY   ...
+# longhorn   driver.longhorn.io      Delete          ...
 
 # multipathd 비활성화 (Longhorn과 충돌 방지)
 sudo systemctl stop multipathd
@@ -185,29 +193,6 @@ kubectl create secret generic postgres-secret \
 
 <br />
 
-`postgres-storageclass.yaml`
-
-```yaml
-kind: StorageClass
-apiVersion: storage.k8s.io/v1
-
-metadata:
-  # name: longhorn # longhorn이라는 이름은 위에서 설치하면서 이미 사용
-  name: longhorn-single
-
-provisioner: driver.longhorn.io
-allowVolumeExpansion: true # PVC 용량 확장 허용
-parameters:
-  # 단일 노드 환경에서는 1로 설정 필수
-  numberOfReplicas: "1" # Longhorn은 3개의 복제본을 기본으로 하지만, 현재처럼 단일 노드(EC2 1대) 환경에서는 복제본을 1로 설정해야만 볼륨이 정상적으로 작동
-  staleReplicaTimeout: "2880"
-
-# Longhorn 설치 시 기본 StorageClass가 자동 생성되므로,
-# 단일 노드 환경에서는 이 파일을 사용하여 replica를 1로 고정한 별도의 StorageClass를 생성
-```
-
-<br />
-
 `postgres-pvc.yaml`
 
 ```yaml
@@ -219,8 +204,7 @@ metadata:
   namespace: postgres-database # 네임스페이스
 
 spec:
-  # storageClassName: longhorn
-  storageClassName: longhorn-single
+  storageClassName: longhorn
   accessModes:
     - ReadWriteOnce
   resources:
@@ -367,7 +351,6 @@ kubectl create namespace postgres-database --dry-run=client -o yaml | kubectl ap
 kubectl apply -f postgres-config.yaml
 kubectl apply -f postgres-secret.yaml
 
-kubectl apply -f postgres-storageclass.yaml
 kubectl apply -f postgres-pvc.yaml
 
 kubectl apply -f headless-service.yaml
