@@ -229,7 +229,7 @@ metadata:
   namespace: postgres-database # 네임스페이스
 
 spec:
-  # storageClassName: longhorn-single
+  storageClassName: longhorn-single
   accessModes:
     - ReadWriteOnce
   resources:
